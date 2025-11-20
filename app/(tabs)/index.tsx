@@ -1,98 +1,176 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import polyline from '@mapbox/polyline';
+import * as Location from 'expo-location';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+const GOOGLE_API_KEY = 'AIzaSyCnLY7xzyywRT0UZbZV4fl1CoVwc5PT0Qs';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const [currentLocation, setCurrentLocation] = useState<any>(null);
+
+
+  const [destination] = useState({
+    latitude: 10.7721,
+    longitude: 106.6983,
+  });
+
+
+  const [routeCoordinates, setRouteCoordinates] = useState<any[]>([]);
+
+
+  const [isTracking, setIsTracking] = useState(false);
+
+  const mapRef = useRef<MapView>(null);
+  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+
+
+  useEffect(() => {
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Quyền truy cập', 'Vui lòng cấp quyền vị trí để sử dụng ứng dụng');
+        return;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      setCurrentLocation(location.coords);
+    })();
+  }, []);
+
+
+  const fetchDirections = async (startLoc: any, destLoc: any) => {
+    try {
+      const mode = 'driving';
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${startLoc.latitude},${startLoc.longitude}&destination=${destLoc.latitude},${destLoc.longitude}&key=${GOOGLE_API_KEY}&mode=${mode}`;
+
+      const response = await fetch(url);
+      const result = await response.json();
+
+      if (result.routes.length > 0) {
+        const points = result.routes[0].overview_polyline.points;
+        const decodedCoords = polyline.decode(points).map((point) => ({
+          latitude: point[0],
+          longitude: point[1]
+        }));
+        setRouteCoordinates(decodedCoords);
+
+
+        mapRef.current?.fitToCoordinates(decodedCoords, {
+          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+          animated: true,
+        });
+      }
+    } catch (error) {
+      console.error("Lỗi lấy chỉ đường:", error);
+    }
+  };
+
+  const toggleTracking = async () => {
+    if (isTracking) {
+      if (locationSubscription.current) {
+        locationSubscription.current.remove();
+      }
+      setIsTracking(false);
+    } else {
+      setIsTracking(true);
+      locationSubscription.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 5000,
+          distanceInterval: 10,
+        },
+        (loc) => {
+          const { latitude, longitude } = loc.coords;
+          setCurrentLocation({ latitude, longitude });
+
+          if (destination) {
+            fetchDirections({ latitude, longitude }, destination);
+          }
+        }
+      );
+    }
+  };
+
+
+  useEffect(() => {
+    if (currentLocation && destination) {
+      fetchDirections(currentLocation, destination);
+    }
+  }, [currentLocation]);
+
+  return (
+    <View style={styles.container}>
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        showsUserLocation={true}
+        initialRegion={{
+          latitude: 10.762622,
+          longitude: 106.660172,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        }}
+      >
+        {destination && (
+          <Marker
+            coordinate={destination}
+            title="Điểm giao hàng"
+            pinColor="red"
+          />
+        )}
+
+        {routeCoordinates.length > 0 && (
+          <Polyline
+            coordinates={routeCoordinates}
+            strokeColor="#00B0FF"
+            strokeWidth={4}
+          />
+        )}
+      </MapView>
+
+      <View style={styles.controlContainer}>
+        <TouchableOpacity
+          style={[styles.button, isTracking ? styles.btnActive : styles.btnInactive]}
+          onPress={toggleTracking}
+        >
+          <Text style={styles.btnText}>
+            {isTracking ? "Đang theo dõi: BẬT" : "Theo dõi vị trí: TẮT"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  map: {
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
+  controlContainer: {
     position: 'absolute',
+    bottom: 90,
+    left: 20,
+    right: 20,
   },
+  button: {
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  btnActive: { backgroundColor: '#4CAF50' },
+  btnInactive: { backgroundColor: '#F44336' },
+  btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
 });
