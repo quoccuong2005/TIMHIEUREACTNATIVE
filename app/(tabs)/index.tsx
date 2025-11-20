@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import { serverTimestamp } from 'firebase/firestore';
 
-// 1. CẤU HÌNH FIREBASE
+
 const firebaseConfig = {
   apiKey: "AIzaSyCimmzD59tCb9Z-zSUYnTd8TKP8_7uaI2s",
   authDomain: "chatreal-8cf8a.firebaseapp.com",
@@ -31,7 +31,7 @@ const firebaseConfig = {
   measurementId: "G-DMK12B9LMY"
 };
 
-// Khởi tạo Firebase
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -42,8 +42,10 @@ export default function ChatApp() {
   const [password, setPassword] = useState('');
   const [messages, setMessages] = useState<IMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState('');
 
-  // Theo dõi trạng thái đăng nhập
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -52,7 +54,7 @@ export default function ChatApp() {
     return unsubscribe;
   }, []);
 
-  // Lắng nghe tin nhắn realtime
+
   useEffect(() => {
     if (!user) return;
 
@@ -88,22 +90,22 @@ export default function ChatApp() {
     return unsubscribe;
   }, [user]);
 
-  // === HÀM GỬI TIN NHẮN (ĐÃ SỬA: THÊM TRY/CATCH) ===
+
   const onSend = useCallback(async (messages: IMessage[] = []) => {
-    // 1. Hiện ngay lên màn hình cho mượt
+
     setMessages((previousMessages) => GiftedChat.append(previousMessages, messages));
 
     const { _id, createdAt, text, user, image } = messages[0];
 
     try {
-      // 2. Cố gắng lưu vào Firebase
+
       await addDoc(collection(db, 'chats'), {
         _id,
-        // Ensure Firestore stores a Timestamp consistently
+
         createdAt: serverTimestamp(),
         text: text || '',
         user,
-        image: image || null, // Lưu link ảnh vào DB
+        image: image || null,
       });
     } catch (error: any) {
       console.error("Lỗi gửi tin nhắn:", error);
@@ -111,7 +113,7 @@ export default function ChatApp() {
     }
   }, []);
 
-  // === HÀM CHỌN ẢNH (ĐÃ SỬA: GIẢM QUALITY) ===
+
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -167,13 +169,15 @@ export default function ChatApp() {
   // Xử lý Auth
   const handleAuth = async (type: 'login' | 'signup') => {
     try {
+      setAuthError('');
       if (type === 'login') {
         await signInWithEmailAndPassword(auth, email, password);
       } else {
         await createUserWithEmailAndPassword(auth, email, password);
       }
     } catch (error: any) {
-      alert(error.message);
+      const msg = error?.message || 'Lỗi xác thực';
+      setAuthError(msg);
     }
   };
 
@@ -193,25 +197,40 @@ export default function ChatApp() {
   if (!user) {
     return (
       <View style={styles.authContainer}>
-        <Text style={styles.title}>Chat Realtime 🔥</Text>
-        <TextInput
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          style={styles.input}
-          autoCapitalize="none"
-        />
-        <TextInput
-          placeholder="Mật khẩu"
-          value={password}
-          onChangeText={setPassword}
-          style={styles.input}
-          secureTextEntry
-        />
-        <View style={styles.btnGroup}>
-          <Button title="Đăng nhập" onPress={() => handleAuth('login')} />
-          <View style={{ height: 10 }} />
-          <Button title="Đăng ký" color="gray" onPress={() => handleAuth('signup')} />
+        <View style={styles.authCard}>
+          <Text style={styles.title}>Chat Realtime</Text>
+          <Text style={styles.subtitle}>Nhắn tin nhanh, an toàn</Text>
+          {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
+
+          <TextInput
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            style={styles.input}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+
+          <View style={styles.passwordRow}>
+            <TextInput
+              placeholder="Mật khẩu"
+              value={password}
+              onChangeText={setPassword}
+              style={[styles.input, { flex: 1 }]}
+              secureTextEntry={!showPassword}
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.showBtn}>
+              <Text style={styles.showText}>{showPassword ? 'Ẩn' : 'Hiện'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => handleAuth('login')}>
+            <Text style={styles.btnText}>Đăng nhập</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleAuth('signup')}>
+            <Text style={styles.secondaryText}>Tạo tài khoản mới</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -331,5 +350,26 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 12,
     paddingTop: 8,
     flex: 1
-  }
+  },
+  authCard: {
+    width: '92%',
+    maxWidth: 420,
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 4,
+    alignSelf: 'center'
+  },
+  subtitle: { color: '#6b7280', marginBottom: 12, textAlign: 'center' },
+  errorText: { color: '#b91c1c', marginBottom: 8, textAlign: 'center' },
+  passwordRow: { flexDirection: 'row', alignItems: 'center' },
+  showBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+  showText: { color: '#6b7280', fontWeight: '600' },
+  primaryBtn: { backgroundColor: '#4f46e5', padding: 12, borderRadius: 10, marginTop: 12 },
+  secondaryBtn: { backgroundColor: 'transparent', padding: 12, borderRadius: 10, marginTop: 10, alignItems: 'center' },
+  btnText: { color: '#fff', textAlign: 'center', fontWeight: '700' },
+  secondaryText: { color: '#4f46e5', textAlign: 'center', fontWeight: '700' },
 });
